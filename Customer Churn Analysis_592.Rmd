@@ -1,0 +1,237 @@
+---
+title: "Using Survival Analysis To Predict Customer Churn"
+author: "Daisy"
+date: "4/14/2021"
+output:
+  word_document: default
+  pdf_document: default
+  slidy_presentation: default
+  beamer_presentation: default
+  ioslides_presentation: default
+---
+
+# Introduction
+
+Customer churn occurs when customers or subscribers stop doing business with a company or service, also known as customer attrition. It is also referred as loss of clients or customers. One industry in which churn rates are particularly useful is the telecommunications industry, because most customers have multiple options from which to choose within a geographic location.This paper attempts to analyze the influence of various factors on customer churn through the research on the historical data of a certain operator's IBM customers, and further explores the correlation between these factors and customer churn through logistic regression and survival analysis model. At the same time, using description analysis and model analysis, this paper studies the influence of different factors on customer churn, grasps the situation of customer churn, and puts forward targeted suggestions on how to effectively prevent customer churn of IBM.
+
+# Data Overview
+
+The data was downloaded from IBM Sample Data Sets for customer retention programs. The goal of this project is to predict behaviors of churn or not churn to help retain customers. Each row represents a customer, each column contains a customer’s attribute.
+
+Customers who left within the last month – the column is called Churn
+Services that each customer has signed up for – phone, multiple lines, internet, online security, online backup, device protection, tech support, and streaming TV and movies
+Customer account information – how long they’ve been a customer, contract, payment method, paperless billing, monthly charges, and total charges
+Demographic info about customers – gender, age range, and if they have partners and dependents
+
+The raw data contains 7043 rows (customers) and 21 columns (features). The “Churn” column is our target.
+TotalCharges has 0.156% missing value in the dataset.
+
+Other variables are listed as follows:
+customerID
+gender (female, male)
+SeniorCitizen (Whether the customer is a senior citizen or not (1, 0))
+Partner (Whether the customer has a partner or not (Yes, No))
+Dependents (Whether the customer has dependents or not (Yes, No))
+tenure (Number of months the customer has stayed with the company)
+PhoneService (Whether the customer has a phone service or not (Yes, No))
+MultipleLines (Whether the customer has multiple lines r not (Yes, No, No phone service)
+InternetService (Customer’s internet service provider (DSL, Fiber optic, No)
+OnlineSecurity (Whether the customer has online security or not (Yes, No, No internet service)
+OnlineBackup (Whether the customer has online backup or not (Yes, No, No internet service)
+DeviceProtection (Whether the customer has device protection or not (Yes, No, No internet service)
+TechSupport (Whether the customer has tech support or not (Yes, No, No internet service)
+streamingTV (Whether the customer has streaming TV or not (Yes, No, No internet service)
+streamingMovies (Whether the customer has streaming movies or not (Yes, No, No internet service)
+Contract (The contract term of the customer (Month-to-month, One year, Two year)
+PaperlessBilling (Whether the customer has paperless billing or not (Yes, No))
+PaymentMethod (The customer’s payment method (Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic)))
+MonthlyCharges (The amount charged to the customer monthly — numeric)
+TotalCharges (The total amount charged to the customer — numeric)
+Churn ( Whether the customer churned or not (Yes or No))
+
+
+# Methods and data diagnostics
+
+The question I want to study is what are the key factors that lead to the loss of customers. It turns out that retaining old customers is more important than developing and discovering new ones. According to the research results of Kotler, P. (1994), the cost of developing a new customer is 5 times that of retaining an old customer, and the interest rate brought by retaining an old customer is 16 times that of developing a new customer. Therefore, reducing customer loss is equal to reducing profit loss with less cost. From this, we know that based on the maintenance and management of customer relationship, how to retain customers is very important to the survival and development of the company. A good operator must know how to retain its customers. So how to effectively predict the potential loss of customers and improve the efficiency of customer retention has become our concern. At present, researches on customer churn prediction are very extensive, such as decision tree algorithm, which is the most widely used. Decision tree algorithm classification accuracy is higher, the modeling also relatively simple, high classification accuracy, and it can export more straightforward classification rules, but it also has some shortcomings, in addition, many experts and scholars put forward using Logistic regression and other research method and artificial neural network model, however, due to the particularity of the customer churn data set itself, The use of these methods is worth discussing. In view of this, according to the basic concept of survival analysis method, this paper establishes a survival analysis model of customer churn scenario, and makes a specific analysis by using historical relevant data to construct a customer churn model. I think survival analysis will be effective for guiding enterprises to manage customer churn.By establishing Cox model and Kaplan-Meier analysis of the relationship between various factors and customer loss, I will try to find out the main reasons for customer loss, and give solutions and suggestions for these problems.Visualization techniques are also used to present and analyze key information. Likelihood ratio test is preformed to check the model comparison.
+
+```{r,echo=FALSE,warning = FALSE}
+library(tidyverse) 
+library(nortest) # Anderson-Darling normality test
+library(FactoMineR)
+library(factoextra)
+library(KMsurv)
+library(survival)
+library(survminer)
+library(corrr)
+library(MASS)
+library(gridExtra) # grid.arrange
+
+telco_df <- read.csv("/Users/daisyshi/Downloads/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+sort(sapply(telco_df , function(x) { sum(is.na(x)) }), decreasing=TRUE)
+row_count = nrow(telco_df)
+uniqueID_count =length(unique(telco_df$customerID))
+print(paste0("Number of Rows : ", row_count))
+print(paste0("Number of Unique CustomerID : ", uniqueID_count))
+
+summary(telco_df)
+
+options(repr.plot.width = 14, repr.plot.height = 8)
+
+# check out distribution of numeric feature(s) 
+telco_df %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value),color="lightblue") + theme_minimal() +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram() + 
+    theme(axis.title=element_text(size=16,face="bold")) + 
+    theme(text = element_text(size = 20))
+
+
+str(telco_df)
+table(telco_df$is_churn)
+prop.table(table(telco_df$is_churn))
+
+A<-table(telco_df$SeniorCitizen,telco_df$is_churn)
+
+prop.table(addmargins(A))
+prop.table(A1)
+table(telco_df$SeniorCitizen,telco_df$is_churn)
+table(telco_df$SeniorCitizen,telco_df$is_churn)
+
+
+missing<-function(x){round(sum(is.na(x)/length(x)*100),3)}
+sort(apply(telco_df, 2, missing),decreasing = TRUE)
+
+#telco_df %>% filter(!is.na(TotalCharges),!is.na(MonthlyCharges)) %>% dplyr::select (TotalCharges, MonthlyCharges, tenure) %>% cor() %>% corrplot.mixed(upper = "circle", tl.col = "black", number.cex = 1)
+
+```
+
+
+```{r,echo=FALSE,warning=FALSE}
+# add 'is_churn' column to conduct survival anlaysis 
+telco_df$is_churn <- ifelse(telco_df$Churn == 'Yes', 1, 0)
+
+# check N/A in each column. 
+summary(survfit(Surv(tenure, is_churn) ~ 1, data = telco_df), times = 60)
+plot(survfit(Surv(tenure, is_churn) ~ 1, data = telco_df), 
+     xlab = "Days", 
+     ylab = "Overall survival probability")
+
+surv_object <- Surv(time = telco_df$tenure, event = telco_df$is_churn)
+
+
+fit <- survfit(surv_object ~ gender, data = telco_df)
+ggsurvplot(fit, data = telco_df, 
+           pval = TRUE, 
+           conf.int = TRUE, 
+           risk.table = TRUE,tables.height = 0.45)
+
+
+fit1 <- survfit(surv_object ~ SeniorCitizen, data = telco_df)
+ggsurvplot(fit1, data = telco_df, 
+           pval = TRUE, 
+           conf.int = TRUE, 
+           risk.table = TRUE,tables.height = 0.45)
+
+
+fit2 <- survfit(surv_object ~ InternetService, data = telco_df)
+ggsurvplot(fit2, data = telco_df, 
+           pval = TRUE, 
+           conf.int = TRUE, 
+           risk.table = TRUE,tables.height = 0.45)
+
+fit3 <- survfit(surv_object ~ PaymentMethod, data = telco_df)
+ggsurvplot(fit3, data = telco_df, 
+           pval = TRUE, 
+           conf.int = TRUE, 
+           risk.table = TRUE,tables.height = 0.45)
+
+fit4 <- survfit(surv_object ~ Contract, data = telco_df)
+ggsurvplot(fit4, data = telco_df, 
+           pval = TRUE, 
+           conf.int = TRUE, 
+           risk.table = TRUE,tables.height = 0.45)
+
+
+#We notice payment methods by using electronic check has highest churn probability compare with other payment methods. 
+
+fit_log<-survdiff(surv_object ~ StreamingTV, data=telco_df)
+fit_log1<-survdiff(surv_object ~ Contract, data=telco_df)
+
+
+fit_cox<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+StreamingTV+StreamingMovies+Contract+PaymentMethod+TotalCharges, data = telco_df)
+estimate<-basehaz(fit_cox,centered = FALSE)
+summary(fit_cox)
+exp(coef(fit_cox))
+
+
+#baseline
+plot(estimate$time,estimate$hazard,type = "l",main = "The predicted survival curve of Cox model1")
+
+
+fit_cox1<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+StreamingTV+StreamingMovies+TotalCharges, data = telco_df)
+estimate<-basehaz(fit_cox,centered = FALSE)
+estimate1<-basehaz(fit_cox1,centered = FALSE)
+
+plot(estimate1$time,estimate$hazard,type = "l",main = "The predicted survival curve of Cox model2")
+anova(fit_cox,fit_cox1)
+
+
+
+telco_df <- read.csv("/Users/daisyshi/Downloads/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+head(telco_df,3)
+
+telco_df$is_churn <- ifelse(telco_df$Churn == 'Yes', 1, 0)
+
+fit_cox1<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+StreamingTV+StreamingMovies+TotalCharges, data = telco_df)
+
+fit_cox6<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+StreamingTV*StreamingMovies+TotalCharges, data = telco_df)
+
+anova(fit_cox1,fit_cox6)
+
+fit_cox2<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+StreamingTV+StreamingMovies, data = telco_df)
+
+
+fit_cox5<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+StreamingTV, data = telco_df)
+
+
+final<-coxph(Surv(tenure,is_churn)~Partner+PhoneService+InternetService+
+               StreamingMovies+Contract+PaymentMethod,data = telco_df)
+summary(final)
+
+
+s_res <- predict(final, type = "expected")
+km <- survfit(Surv(s_res, telco_df$is_churn) ~ 1)
+plot(km, fun = "cumhaz")
+abline(a = 0, b = 1, col = "red", lty = "dashed")
+
+ph_check <- cox.zph(final)
+plot(ph_check,var = "Partner")
+abline(h = 0, col = "red", lty = "dashed")
+ph_check
+
+```
+
+```{r}
+summary(fit_cox1)
+```
+# Main Results For Survival Analysis 
+Kaplan-Meier Curve: Probability curve in survival analysis
+Cox Proportional-Hazard (PH): Hypothesis testing in survival analysis
+Log Rank Test: Regression in survival analysis
+
+The null hypothesis in Logrank test states that there is no difference between the populations in the probability of an event (here a churn). The evidence is not sufficient to reject the null hypothesis. Null hypothesis: Gender is not a factor that distinguishes the probability to churn. The evidence is sufficient to reject the null hypothesis. Null hypothesis: SeniorCitizen is not a factor that distinguishes the probability to churn. Non-senior citizens (SeniorCitizen = 0) are more likely to stay longer with the Telco service. The difference in the probabilities between the Senior and non-Senior Citizens staying with Telco service becomes more different as the tenure gets longer. Staying with the firm for 60 weeks is ~75% for non-senior citizens vs. ~50% for senior citizens. The evidence is sufficient to reject the null hypothesis.
+Null hypothesis: Internet Service is not a factor that distinguishes the probability to churn.
+
+We noticed the magnitude of differences across groups were the very large for Internet Service. Interestingly, customers without Internet Service (in this data, meaning those only with phone service) had the largest survival rate. We had the largest churn rate for customers with Fiber Optics for the internet service.Also,customer choose payment methods by using electronic check has highest churn probability compare with other payment methods. 
+
+Based on the likelihood test result, Likelihood ratio test= 5951  on 12 df,   p=<2e-16, the following variables are selected. "Partner+PhoneService+InternetService+StreamingTV+StreamingMovies+Contract+PaymentMethod+TotalCharges". The table displaied the exp(coef)for each variable in the model. 
+
+# Conclusion 
+
+We note that, holding other variables constant, the average user churn risk of Internet service fiber users is 6 times that of non-fiber users, and the average churn risk of telephone service users is 3 times that of telephone service users. Particular attention should be paid to customers who are vulnerable to churn, such as those who choose to use Internet fiber services and those who choose to pay by cheque or electronic cheque. For these users, we can increase retention by tying long-term contracts with discount rates.
+
+# Works Cited
+
+Kotler, P. (1994). Reconceptualizing marketing: an interview with Philip Kotler. European Management Journal, 12(4), 353-361.
